@@ -1,7 +1,8 @@
 # Imports
 import torch
 import torch.nn as nn
-from transformers import CLIPTextModel, CLIPTokenizer
+from transformers import CLIPTokenizer
+from transformers.models.clip.modeling_clip import CLIPTextModel
 from unet import UNET
 from typing import List
 
@@ -22,7 +23,7 @@ class TextEmbeddings(nn.Module):
     def forward(self, text_prompts: List[str]) -> torch.Tensor: # [B, D]
         if isinstance(text_prompts, str):
             text_prompts = [text_prompts]
-        
+
         tokens = self.tokenizer(
             text_prompts,
             padding=True,
@@ -50,17 +51,15 @@ class TextConditionedUNET(UNET):
         super().__init__()
         self.text_embeddings = TextEmbeddings()
     
-    def forward(self, x , t, text_prompts):
+    def forward(self, x , t, text_embeddings):
         x = self.shallow_conv(x)
         residuals = []
         # Downwards part of U
         for i in range(self.num_layers//2):
             layer = getattr(self, f'Layer{i+1}')
             positional_embeddings = self.positional_embeddings(x, t)
-            text_embeddings = self.text_embeddings(text_prompts)
-            # Add Text Embeddings to the positional embeddings.
 
-            embeddings = text_embeddings[:, :, None, None] + positional_embeddings
+            embeddings = positional_embeddings + text_embeddings[:, :, None, None]
             x, r = layer(x, embeddings)
             residuals.append(r)
         # Upwards Part of U

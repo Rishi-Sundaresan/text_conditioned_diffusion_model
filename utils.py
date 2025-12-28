@@ -9,8 +9,8 @@ def display_reverse(images: List[List], save_path: str = "images/example.png"):
     for i, ax in enumerate(axes.flat):
         x = flattened_image_list[i].squeeze(0)
         x = rearrange(x, 'c h w -> h w c')
-        x = x.numpy()
-        ax.imshow(x)
+        x = x.cpu().numpy()
+        ax.imshow(x.squeeze(-1), cmap='gray')
         ax.axis('off')
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
