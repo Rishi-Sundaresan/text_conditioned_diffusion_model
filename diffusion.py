@@ -1,7 +1,7 @@
 # Imports
 from unet import UNET
 from text_conditioned_unet import TextConditionedUNET, TextEmbeddings
-from utils import display_reverse
+from utils import display_reverse, display_losses
 
 import torch
 import torch.nn as nn
@@ -20,6 +20,8 @@ import numpy as np
 
 DEVICE_ = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TEXT_EMBEDDING_NUM_CHUNKS_ = 10
+EARLY_TIMESTEP_THRESHOLD_ = 100
+print("Using Device: ", DEVICE_)
 
 
 class DDPM_Scheduler(nn.Module):
@@ -93,13 +95,17 @@ def train(batch_size: int=64,
         model.load_state_dict(checkpoint['weights'])
         ema.load_state_dict(checkpoint['ema'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-    criterion = nn.MSELoss(reduction='mean')
+    criterion = nn.MSELoss(reduction='none')
 
     # Precompute all Text Embeddings.
     all_label_embeddings = precompute_text_embeddings(train_dataset, label_name_lookup)
 
+    avg_epoch_losses = []
+    avg_early_timestep_epoch_losses = []
+
     for i in range(num_epochs):
-        total_loss = 0
+        all_loss = []
+        all_early_timestep_loss = []
         for bidx, data in enumerate(tqdm(train_loader, desc=f"Epoch {i+1}/{num_epochs}")):
             x = data['image']
             x = x.to(DEVICE_)
@@ -114,14 +120,27 @@ def train(batch_size: int=64,
             else:
                 output = model(x,t) 
             optimizer.zero_grad()
-            loss = criterion(output, e) # Main Loss
-            total_loss += loss.item()
+            loss_tensor = criterion(output, e) # Main Loss
+            loss_per_sample = loss_tensor.mean(dim=(1, 2, 3)) 
+            loss = loss_per_sample.mean()
+            all_loss.append(loss)
 
             # Compute gradient and update weights
             loss.backward()
             optimizer.step()
             ema.update(model)
-        print(f'Epoch {i+1} | Avg Batch Loss {total_loss / (60000/batch_size):.5f}')
+
+            # Accumulate early timesteps loss for logging.
+            mask = t <= EARLY_TIMESTEP_THRESHOLD_
+            if mask.any():
+                all_early_timestep_loss.append(loss_per_sample[mask].mean())
+
+        avg_batch_loss = torch.stack(all_loss).mean().item()
+        avg_early_timestep_loss = torch.stack(all_early_timestep_loss).mean().item()
+        avg_epoch_losses.append(avg_batch_loss)
+        avg_early_timestep_epoch_losses.append(avg_early_timestep_loss)
+        print(f'Epoch {i+1} | Avg Batch Loss {avg_batch_loss:.5f}\
+         | T < {EARLY_TIMESTEP_THRESHOLD_} Loss {avg_early_timestep_loss:.5f}')
 
         checkpoint = {
             'weights': model.state_dict(),
@@ -132,8 +151,14 @@ def train(batch_size: int=64,
         with open("checkpoints/checkpoint.txt", "w") as f:
             f.write(f"Epoch for checkpoint: {i}\n")
 
-        if i % 10 == 0:
-            inference('checkpoints/ddpm_checkpoint', num_images=3) # store examples.
+        if (i+1) % 10 == 0:
+            sample_texts = ["Drawing of apple", "Drawing of banana", "Drawing of strawberry"]
+            inference('checkpoints/ddpm_checkpoint', text_conditioned=text_conditioned, texts=sample_texts) # store examples.
+        
+        if (i+1) % 5 == 0:
+            display_losses(losses_list=[avg_epoch_losses, avg_early_timestep_epoch_losses], losses_names=["Avg loss", f"Avg t < {EARLY_TIMESTEP_THRESHOLD_} loss"], save_path = "images/quickdraw/losses.png")
+
+        
 
 
 
@@ -141,9 +166,10 @@ def train(batch_size: int=64,
 def inference(checkpoint_path: str=None,
               num_time_steps: int=1000,
               ema_decay: float=0.9999,
-              num_images: int = 10,
-              text_conditioned = True):
+              text_conditioned = True,
+              texts = []):
 
+    num_images = len(texts)
 
     print("Loading Checkpoint Info...")
     checkpoint = torch.load(checkpoint_path)
@@ -160,8 +186,7 @@ def inference(checkpoint_path: str=None,
         model = ema.module.eval()
         print("Running Inference...")
         for i in range(num_images): # 10 images.
-            text = f"Drawing of an Apple"
-            embeddings = text_embedder([text])
+            embeddings = text_embedder([texts[i]])
             images.append([]) 
             z = torch.randn(1, 1, 32, 32).to(DEVICE_) # Start from noise, we will create image.
 
@@ -183,4 +208,4 @@ def inference(checkpoint_path: str=None,
 
             images[-1].append(x)
             x = rearrange(x.squeeze(0), 'c h w -> h w c').detach()
-            display_reverse(images, save_path="images/example.png")
+            display_reverse(images, texts, save_path="images/quickdraw/example.png")

@@ -15,12 +15,12 @@ TEXT_CONDITIONED_ = True
 SELECTED_CATEGORIES = [
     "apple",
     "banana",
-    # "blackberry",
-    # "blueberry",
-    # "grapes",
-    # "pear",
-    # "pineapple",
-    # "strawberry",
+    "blackberry",
+    "blueberry",
+    "grapes",
+    "pear",
+    "pineapple",
+    "strawberry",
     "watermelon"
 ]
 
@@ -57,8 +57,9 @@ def main():
 
     )
 
-    train(batch_size=64, lr=2e-6, num_epochs=100, text_conditioned =TEXT_CONDITIONED_, train_dataset=filtered_train_ds, label_name_lookup=label_names)
-    inference('checkpoints/quickdraw/ddpm_checkpoint', num_images=10, text_conditioned =TEXT_CONDITIONED_)
+    train(batch_size=64, lr=2e-6, num_epochs=250, text_conditioned =TEXT_CONDITIONED_, train_dataset=filtered_train_ds, label_name_lookup=label_names)
+
+    inference('checkpoints/ddpm_checkpoint', text_conditioned =TEXT_CONDITIONED_, texts=[f"Drawing of {fruit}" for fruit in SELECTED_CATEGORIES])
 
 if __name__ == '__main__':
     main()
