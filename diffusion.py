@@ -18,10 +18,8 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import numpy as np
 
-# CONFIG
 DEVICE_ = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("DEVICE_", DEVICE_)
-TEXT_CONDITIONED_ = True
+TEXT_EMBEDDING_NUM_CHUNKS_ = 10
 
 
 class DDPM_Scheduler(nn.Module):
@@ -43,6 +41,35 @@ def set_seed(seed: int=42):
     random.seed(seed)
 
 
+def precompute_text_embeddings(train_dataset, label_name_lookup) -> torch.Tensor:
+    print("Precomputing all Text Embeddings.")
+    text_embedder = TextEmbeddings().to(DEVICE_)
+
+    all_label_raw = []
+    if "label" in train_dataset.features:
+        all_label_raw = train_dataset['label']
+    else:
+        all_label_raw = train_dataset.targets.tolist()
+
+    if label_name_lookup:
+        all_label_raw = [label_name_lookup[int(i)] for i in all_label_raw]
+
+    all_labels = [f"Drawing of {i}" for i in all_label_raw]
+    all_label_embeddings = torch.empty(0, device=DEVICE_)
+
+    chunk_size = max(1, len(all_labels) // TEXT_EMBEDDING_NUM_CHUNKS_)
+
+    for i in tqdm(
+        range(0, len(all_labels), chunk_size),
+        desc="Text embeddings",
+        unit="chunk"
+    ):
+        labels = all_labels[i:i + chunk_size]
+        embeddings = text_embedder(labels)
+        all_label_embeddings = torch.cat([all_label_embeddings, embeddings], dim=0)
+    return all_label_embeddings
+
+
 def train(batch_size: int=64,
           num_time_steps: int=1000,
           num_epochs: int=15,
@@ -50,11 +77,12 @@ def train(batch_size: int=64,
           ema_decay: float=0.9999,  
           lr=2e-5,
           text_conditioned=False,
-          checkpoint_path: str=None):
-
+          checkpoint_path: str=None,
+          train_dataset = None,
+          label_name_lookup = None):
     set_seed(random.randint(0, 2**32-1) if seed == -1 else seed)
-    train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transforms.ToTensor())
     train_loader = DataLoader(train_dataset, batch_size, shuffle=False, drop_last=True, num_workers=4)
+
 
     scheduler = DDPM_Scheduler(num_time_steps)
     model = TextConditionedUNET().to(DEVICE_) if text_conditioned else UNET().to(DEVICE_)
@@ -68,19 +96,12 @@ def train(batch_size: int=64,
     criterion = nn.MSELoss(reduction='mean')
 
     # Precompute all Text Embeddings.
-    print("Precomputing all Text Embeddings.")
-    text_embedder = TextEmbeddings().to(DEVICE_)
-    all_labels = [f"Drawing of the number {i}" for i in train_loader.dataset.targets.tolist()]
-    all_label_embeddings = torch.Tensor([]).to(DEVICE_)
-    for i in range(0, len(all_labels), len(all_labels)//5):
-        labels = all_labels[i:i+len(all_labels)//5]
-        embeddings = text_embedder(labels)
-        all_label_embeddings = torch.cat([all_label_embeddings, embeddings], dim = 0)
-    print("Done Precomputing all Text Embeddings.")
+    all_label_embeddings = precompute_text_embeddings(train_dataset, label_name_lookup)
 
     for i in range(num_epochs):
         total_loss = 0
-        for bidx, (x, labels) in enumerate(tqdm(train_loader, desc=f"Epoch {i+1}/{num_epochs}")):
+        for bidx, data in enumerate(tqdm(train_loader, desc=f"Epoch {i+1}/{num_epochs}")):
+            x = data['image']
             x = x.to(DEVICE_)
             x = F.pad(x, (2,2,2,2)) # 32 by 32
             t = torch.randint(0, num_time_steps, (batch_size,))
@@ -139,7 +160,7 @@ def inference(checkpoint_path: str=None,
         model = ema.module.eval()
         print("Running Inference...")
         for i in range(num_images): # 10 images.
-            text = f"Drawing of the number {i % 10}"
+            text = f"Drawing of an Apple"
             embeddings = text_embedder([text])
             images.append([]) 
             z = torch.randn(1, 1, 32, 32).to(DEVICE_) # Start from noise, we will create image.
@@ -163,11 +184,3 @@ def inference(checkpoint_path: str=None,
             images[-1].append(x)
             x = rearrange(x.squeeze(0), 'c h w -> h w c').detach()
             display_reverse(images, save_path="images/example.png")
-            
-
-def main():
-    #train(lr=2e-6, num_epochs=100, text_conditioned =TEXT_CONDITIONED_)
-    inference('checkpoints/ddpm_checkpoint', num_images=10, text_conditioned =TEXT_CONDITIONED_)
-
-if __name__ == '__main__':
-    main()
