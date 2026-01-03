@@ -26,12 +26,13 @@ class TextEmbeddings(nn.Module):
 
         tokens = self.tokenizer(
             text_prompts,
-            padding=True,
+            padding="max_length",  # pad to max_length for *all batches*
             truncation=True,
-            max_length=100,
+            max_length=77,
             return_tensors="pt"
         ).to(self.text_model.device)
 
+        self.text_model.eval()
         with torch.no_grad():
             outputs = self.text_model(**tokens)
             return outputs.pooler_output

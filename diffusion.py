@@ -43,9 +43,11 @@ def set_seed(seed: int=42):
     random.seed(seed)
 
 
-def precompute_text_embeddings(train_dataset, label_name_lookup) -> torch.Tensor:
+def precompute_text_embeddings(train_dataset, label_name_lookup, batch_size) -> torch.Tensor:
     print("Precomputing all Text Embeddings.")
     text_embedder = TextEmbeddings().to(DEVICE_)
+    text_embedder.eval()
+
 
     all_label_raw = []
     if "label" in train_dataset.features:
@@ -59,7 +61,7 @@ def precompute_text_embeddings(train_dataset, label_name_lookup) -> torch.Tensor
     all_labels = [f"Drawing of {i}" for i in all_label_raw]
     all_label_embeddings = torch.empty(0, device=DEVICE_)
 
-    chunk_size = max(1, len(all_labels) // TEXT_EMBEDDING_NUM_CHUNKS_)
+    chunk_size = batch_size
 
     for i in tqdm(
         range(0, len(all_labels), chunk_size),
@@ -83,8 +85,17 @@ def train(batch_size: int=64,
           train_dataset = None,
           label_name_lookup = None):
     set_seed(random.randint(0, 2**32-1) if seed == -1 else seed)
-    train_loader = DataLoader(train_dataset, batch_size, shuffle=False, drop_last=True, num_workers=4)
+    
+    # Precompute all Text Embeddings.
+    all_label_embeddings = precompute_text_embeddings(train_dataset, label_name_lookup, batch_size)
+    
+    def attach_embedding(example, idx):
+        example["text_embedding"] = all_label_embeddings[idx]
+        return example
 
+    train_dataset = train_dataset.map(attach_embedding, with_indices=True)
+
+    train_loader = DataLoader(train_dataset, batch_size, shuffle=True, drop_last=True, num_workers=4)
 
     scheduler = DDPM_Scheduler(num_time_steps)
     model = TextConditionedUNET().to(DEVICE_) if text_conditioned else UNET().to(DEVICE_)
@@ -97,8 +108,6 @@ def train(batch_size: int=64,
         optimizer.load_state_dict(checkpoint['optimizer'])
     criterion = nn.MSELoss(reduction='none')
 
-    # Precompute all Text Embeddings.
-    all_label_embeddings = precompute_text_embeddings(train_dataset, label_name_lookup)
 
     avg_epoch_losses = []
     avg_early_timestep_epoch_losses = []
@@ -116,7 +125,7 @@ def train(batch_size: int=64,
             x = torch.sqrt(a)*x + torch.sqrt(1-a)*e # Var is 1-a, stdev is sqrt of that, accumulated steps.
             # model predicts the noise e that was added (and accumulated to t)
             if text_conditioned:
-                output = model(x, t, all_label_embeddings[bidx*batch_size:bidx*batch_size + batch_size])
+                output = model(x, t, data['text_embedding'].to(DEVICE_))
             else:
                 output = model(x,t) 
             optimizer.zero_grad()
