@@ -1,6 +1,6 @@
 # Training a Text-Conditioned Diffusion Model
 This repo contains training + eval code for a text-conditioned diffusion model, evaluated on the MNIST and Quickdraw datasets.
-Some of the code in this repo was taken from [this blog](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/)
+Some of the code in this repo was taken from [this blog](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/). This repo is just meant to be informative and a free tutorial for interested viewers.
 
 
 ## Architecture
