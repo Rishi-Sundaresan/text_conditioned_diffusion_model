@@ -1,6 +1,6 @@
 # Training a Text-Conditioned Diffusion Model
 This repo contains training + eval code for a text-conditioned diffusion model, evaluated on the MNIST and Quickdraw datasets.
-Some of the code in this repo was taken from [this blog](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/). This repo is just meant to be informative and a free tutorial for interested viewers.
+Some of the code in this repo was taken from [this blog](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/). 
 
 
 ## Architecture
@@ -43,5 +43,5 @@ Below are similar results for the MNIST dataset (prompted from 0 to 9).
 <img width="600" height="650" alt="image" src="images/example.png" />
 
 ## Conclusion
-We implemented and trained a text-conditioned diffusion model from scratch to generate images of fruits or numbers. Our model training encountered similar trends to SOTA diffusion models (i.e learning low-noise semantics despite the overall loss plateauing, struggling with more complicated fruit textures).
+We implemented and trained a text-conditioned diffusion model from scratch to generate images of fruits or numbers. Our model training encountered similar trends to SOTA diffusion models (i.e learning low-noise semantics despite the overall loss plateauing, struggling with more complicated fruit textures). This repo is just meant to showcase a personal learning exercise, and should not be monetized or published externally.
 
